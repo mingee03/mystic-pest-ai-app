@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../models/pest_diagnosis.dart';
 
@@ -57,9 +58,30 @@ class PipelineApiService {
         yoloConfidence: 0.915,
         detectedCount: 12,
         boxes: const [
-          PestBoundingBox(xc: 0.48, yc: 0.47, w: 0.38, h: 0.36, label: '썩덩나무노린재(군집)', confidence: 0.915),
-          PestBoundingBox(xc: 0.39, yc: 0.42, w: 0.11, h: 0.11, label: '썩덩나무노린재', confidence: 0.874),
-          PestBoundingBox(xc: 0.56, yc: 0.51, w: 0.12, h: 0.12, label: '썩덩나무노린재', confidence: 0.852),
+          PestBoundingBox(
+            xc: 0.48,
+            yc: 0.47,
+            w: 0.38,
+            h: 0.36,
+            label: '썩덩나무노린재(군집)',
+            confidence: 0.915,
+          ),
+          PestBoundingBox(
+            xc: 0.39,
+            yc: 0.42,
+            w: 0.11,
+            h: 0.11,
+            label: '썩덩나무노린재',
+            confidence: 0.874,
+          ),
+          PestBoundingBox(
+            xc: 0.56,
+            yc: 0.51,
+            w: 0.12,
+            h: 0.12,
+            label: '썩덩나무노린재',
+            confidence: 0.852,
+          ),
         ],
         finalPestName: '썩덩나무노린재',
         growthStage: '난괴 및 1령 약충 군집',
@@ -88,7 +110,14 @@ class PipelineApiService {
         yoloConfidence: 0.889,
         detectedCount: 1,
         boxes: const [
-          PestBoundingBox(xc: 0.52, yc: 0.49, w: 0.44, h: 0.34, label: '열대거세미나방(교정)', confidence: 0.889),
+          PestBoundingBox(
+            xc: 0.52,
+            yc: 0.49,
+            w: 0.44,
+            h: 0.34,
+            label: '열대거세미나방(교정)',
+            confidence: 0.889,
+          ),
         ],
         finalPestName: '열대거세미나방',
         growthStage: '중령 유충 (Larva)',
@@ -117,7 +146,14 @@ class PipelineApiService {
         yoloConfidence: 0.964,
         detectedCount: 1,
         boxes: const [
-          PestBoundingBox(xc: 0.49, yc: 0.53, w: 0.31, h: 0.33, label: '비단노린재', confidence: 0.964),
+          PestBoundingBox(
+            xc: 0.49,
+            yc: 0.53,
+            w: 0.31,
+            h: 0.33,
+            label: '비단노린재',
+            confidence: 0.964,
+          ),
         ],
         finalPestName: '비단노린재',
         growthStage: '성충 (Adult)',
@@ -146,7 +182,14 @@ class PipelineApiService {
         yoloConfidence: 0.928,
         detectedCount: 1,
         boxes: const [
-          PestBoundingBox(xc: 0.50, yc: 0.52, w: 0.42, h: 0.39, label: '검거세미밤나방', confidence: 0.928),
+          PestBoundingBox(
+            xc: 0.50,
+            yc: 0.52,
+            w: 0.42,
+            h: 0.39,
+            label: '검거세미밤나방',
+            confidence: 0.928,
+          ),
         ],
         finalPestName: '검거세미밤나방',
         growthStage: '노숙 유충 (거세미)',
@@ -168,6 +211,9 @@ class PipelineApiService {
     required String imagePath,
     bool isAsset = false,
     SamplePestPreset? matchedPreset,
+    Uint8List? uploadBytes,
+    String? uploadFileName,
+    void Function()? onServerResult,
     void Function(String stepMessage)? onProgress,
   }) async {
     onProgress?.call('1단계: YOLOv8-Large v5 (800×800 Letterbox) 해충 위치 탐지 중...');
@@ -176,25 +222,49 @@ class PipelineApiService {
     // 실시간 FastAPI 백엔드 서버 연동 모드일 때
     if (useLiveServer && !isAsset) {
       try {
-        onProgress?.call('서버(FastAPI)로 이미지 전송 및 YOLO v5 + LoRA Rank 16 추론 중...');
+        onProgress?.call(
+          '서버(FastAPI)로 이미지 전송 및 YOLO v5 + LoRA Rank 16 추론 중...',
+        );
         final uri = Uri.parse('$serverUrl/api/v1/diagnose');
         final request = http.MultipartRequest('POST', uri);
-        request.files.add(await http.MultipartFile.fromPath('image', imagePath));
-        final streamed = await request.send().timeout(const Duration(seconds: 25));
+        request.files.add(
+          uploadBytes == null
+              ? await http.MultipartFile.fromPath('image', imagePath)
+              : http.MultipartFile.fromBytes(
+                'image',
+                uploadBytes,
+                filename: uploadFileName,
+              ),
+        );
+        final streamed = await request.send().timeout(
+          const Duration(seconds: 25),
+        );
         final response = await http.Response.fromStream(streamed);
         if (response.statusCode == 200) {
-          final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-          return PestDiagnosisResult.fromJson(data, imagePath: imagePath, isAsset: false);
+          final data =
+              jsonDecode(utf8.decode(response.bodyBytes))
+                  as Map<String, dynamic>;
+          final result = PestDiagnosisResult.fromJson(
+            data,
+            imagePath: imagePath,
+            isAsset: false,
+          );
+          onServerResult?.call();
+          return result;
         }
       } catch (_) {
         // 서버 미연결 시 내장 파이프라인 엔진으로 끊김 없이 자동 전환
       }
     }
 
-    onProgress?.call('중간 브릿지: Agnostic NMS & 시각적 바운딩 박스(Visual Prompting) 합성 중...');
+    onProgress?.call(
+      '중간 브릿지: Agnostic NMS & 시각적 바운딩 박스(Visual Prompting) 합성 중...',
+    );
     await Future.delayed(const Duration(milliseconds: 450));
 
-    onProgress?.call('2단계: Qwen2-VL-2B LoRA (Rank 16) 형태 특징 검증 및 PLS 방제 처방 생성 중...');
+    onProgress?.call(
+      '2단계: Qwen2-VL-2B LoRA (Rank 16) 형태 특징 검증 및 PLS 방제 처방 생성 중...',
+    );
     await Future.delayed(const Duration(milliseconds: 700));
 
     if (matchedPreset != null) {
@@ -202,7 +272,7 @@ class PipelineApiService {
     }
 
     // 사용자가 카메라/갤러리에서 직접 선택한 사진에 대한 지능형 매칭
-    final lower = imagePath.toLowerCase();
+    final lower = (uploadFileName ?? imagePath).toLowerCase();
     for (final preset in samplePresets) {
       if (lower.contains(preset.presetResult.finalPestName)) {
         return PestDiagnosisResult(

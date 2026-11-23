@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'models/pest_diagnosis.dart';
@@ -19,17 +19,17 @@ class MysticPestAiApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1B5E20),
-          primary: const Color(0xFF1B5E20),
+          seedColor: _green,
+          primary: _green,
           secondary: const Color(0xFF2E7D32),
           surface: const Color(0xFFF6F9F6),
         ),
-        scaffoldBackgroundColor: const Color(0xFFF4F7F4),
+        scaffoldBackgroundColor: _page,
         cardTheme: CardThemeData(
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.green.shade100),
+            side: BorderSide(color: const Color(0xFFD9E5DA)),
           ),
           color: Colors.white,
         ),
@@ -39,6 +39,11 @@ class MysticPestAiApp extends StatelessWidget {
   }
 }
 
+const _green = Color(0xFF184B37);
+const _muted = Color(0xFF496358);
+const _page = Color(0xFFF4F7F2);
+const _desktopWidth = 900.0;
+
 class MainNavigationScaffold extends StatefulWidget {
   const MainNavigationScaffold({super.key});
 
@@ -47,399 +52,462 @@ class MainNavigationScaffold extends StatefulWidget {
 }
 
 class _MainNavigationScaffoldState extends State<MainNavigationScaffold> {
-  int _currentIndex = 0;
-  final PipelineApiService _apiService = PipelineApiService();
+  int _index = 0;
+  final _api = PipelineApiService();
+  final _camera = GlobalKey<_PestCameraScreenState>();
   final List<PestDiagnosisResult> _history = [];
-  SamplePestPreset? _pendingPreset;
 
-  void _navigateToCameraWithPreset(SamplePestPreset? preset) {
-    setState(() {
-      _pendingPreset = preset;
-      _currentIndex = 1; // 해충 카메라 탭으로 이동
-    });
-  }
+  static const _labels = ['홈', '해충 카메라', '마이페이지'];
+  static const _icons = [
+    Icons.home_outlined,
+    Icons.camera_alt_outlined,
+    Icons.person_outline,
+  ];
 
-  void _addDiagnosisToHistory(PestDiagnosisResult result) {
-    setState(() {
-      _history.insert(0, result);
-    });
+  void _select(int index) => setState(() => _index = index);
+
+  void _start({ImageSource? source, SamplePestPreset? sample}) {
+    _select(1);
+    if (sample != null) {
+      _camera.currentState?._runWithPreset(sample);
+    } else if (source != null) {
+      _camera.currentState?._pickImage(source);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final desktop = MediaQuery.sizeOf(context).width >= _desktopWidth;
     final screens = [
       HomeScreen(
         history: _history,
-        onOpenCameraTab: () => _navigateToCameraWithPreset(null),
-        onSelectPreset: (preset) => _navigateToCameraWithPreset(preset),
+        onPick: (source) => _start(source: source),
+        onSelectPreset: (sample) => _start(sample: sample),
       ),
       PestCameraScreen(
-        apiService: _apiService,
-        initialPreset: _pendingPreset,
-        onPresetConsumed: () {
-          _pendingPreset = null;
-        },
-        onDiagnosisCompleted: _addDiagnosisToHistory,
+        key: _camera,
+        apiService: _api,
+        onDiagnosisCompleted:
+            (result) => setState(() => _history.insert(0, result)),
       ),
-      MyPageScreen(
-        apiService: _apiService,
-        historyCount: _history.length,
-      ),
+      MyPageScreen(apiService: _api, historyCount: _history.length),
     ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: screens,
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) {
-          setState(() {
-            _currentIndex = idx;
-          });
-        },
+      appBar: AppBar(
+        toolbarHeight: 64,
         backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFC8E6C9),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded, color: Color(0xFF1B5E20)),
-            label: '홈',
+        surfaceTintColor: Colors.transparent,
+        titleSpacing: 0,
+        title: _Content(
+          child: Row(
+            children: [
+              const Icon(Icons.eco_rounded, color: _green),
+              const SizedBox(width: 8),
+              const Flexible(
+                child: Text(
+                  'MYSTIC  |  노지 해충 AI',
+                  style: TextStyle(
+                    color: _green,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (desktop) ...[
+                const Spacer(),
+                for (var i = 0; i < _labels.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Semantics(
+                      selected: _index == i,
+                      child: TextButton.icon(
+                        onPressed: () => _select(i),
+                        style: TextButton.styleFrom(
+                          backgroundColor:
+                              _index == i ? const Color(0xFFE4EFE5) : null,
+                        ),
+                        icon: Icon(_icons[i], size: 18),
+                        label: Text(_labels[i]),
+                      ),
+                    ),
+                  ),
+              ],
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.camera_alt_outlined),
-            selectedIcon: Icon(Icons.camera_alt_rounded, color: Color(0xFF1B5E20)),
-            label: '해충 카메라',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded, color: Color(0xFF1B5E20)),
-            label: '마이페이지',
-          ),
-        ],
+        ),
       ),
+      body: SafeArea(
+        top: false,
+        bottom: desktop,
+        child: IndexedStack(index: _index, children: screens),
+      ),
+      bottomNavigationBar:
+          desktop
+              ? null
+              : NavigationBar(
+                selectedIndex: _index,
+                onDestinationSelected: _select,
+                backgroundColor: Colors.white,
+                indicatorColor: const Color(0xFFE4EFE5),
+                destinations: [
+                  for (var i = 0; i < _labels.length; i++)
+                    NavigationDestination(
+                      icon: Icon(_icons[i]),
+                      label: _labels[i],
+                    ),
+                ],
+              ),
     );
   }
 }
 
-// ============================================================================
-// [탭 1] 홈 화면 (HomeScreen)
-// ============================================================================
-class HomeScreen extends StatelessWidget {
-  final List<PestDiagnosisResult> history;
-  final VoidCallback onOpenCameraTab;
-  final void Function(SamplePestPreset preset) onSelectPreset;
-
-  const HomeScreen({
-    super.key,
-    required this.history,
-    required this.onOpenCameraTab,
-    required this.onSelectPreset,
-  });
+class _Content extends StatelessWidget {
+  const _Content({required this.child});
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            floating: true,
-            backgroundColor: const Color(0xFF1B5E20),
-            foregroundColor: Colors.white,
-            title: const Row(
-              children: [
-                Icon(Icons.eco_rounded, color: Color(0xFFA5D6A7)),
-                SizedBox(width: 8),
-                Text(
-                  'MYSTIC 노지 해충 AI 진단',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-                ),
-              ],
-            ),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Chip(
-                  label: const Text(
-                    'YOLO v5 + LoRA R16',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1B5E20)),
-                  ),
-                  backgroundColor: const Color(0xFFE8F5E9),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-            ],
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 히어로 파이프라인 배너 카드
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF1B5E20), Color(0xFF388E3C)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.green.withValues(alpha: 0.25),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            '2-Stage 계층적 멀티모달 파이프라인 가동 중',
-                            style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          '해충 촬영 한 번으로\n정밀 판별부터 PLS 방제 처방까지',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 21,
-                            fontWeight: FontWeight.bold,
-                            height: 1.3,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          '1단계 YOLOv8-Large v5 (야생 탐지율 96%)\n2단계 Qwen2-VL-2B LoRA Rank 16 (진단 정확도 100%)',
-                          style: TextStyle(color: Color(0xFFE8F5E9), fontSize: 13, height: 1.4),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: onOpenCameraTab,
-                            icon: const Icon(Icons.camera_alt_rounded),
-                            label: const Text(
-                              '해충 카메라로 바로 진단하기',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: const Color(0xFF1B5E20),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 파이프라인 3단계 요약 카드
-                  const Text(
-                    '작동 파이프라인 구조',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B5E20)),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      _buildPipelineStepChip(
-                        icon: Icons.center_focus_strong_rounded,
-                        step: 'STEP 1',
-                        title: 'YOLOv8L v5',
-                        desc: '해충 위치 탐지\n& 시각 BBox 생성',
-                      ),
-                      const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
-                      _buildPipelineStepChip(
-                        icon: Icons.psychology_rounded,
-                        step: 'STEP 2',
-                        title: 'LoRA VLM',
-                        desc: '형태 특징 검증\n& 유사종 자가교정',
-                      ),
-                      const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
-                      _buildPipelineStepChip(
-                        icon: Icons.medical_services_rounded,
-                        step: 'STEP 3',
-                        title: 'PLS 방제법',
-                        desc: '피해 증상 분석\n& 맞춤 약제 처방',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 대표 노지 해충 즉시 시연 (원클릭 파이프라인 테스트)
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '노지 해충 샘플 원클릭 파이프라인 시연',
-                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B5E20)),
-                      ),
-                      Text(
-                        '터치 시 즉시 판별',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  ...PipelineApiService.samplePresets.map(
-                    (preset) => Card(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.asset(
-                            preset.sampleImagePath,
-                            width: 56,
-                            height: 56,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        title: Text(
-                          preset.title,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        subtitle: Text(
-                          '${preset.cropName} • ${preset.subtitle}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        trailing: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF2E7D32), size: 30),
-                        onTap: () => onSelectPreset(preset),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-                  const Text(
-                    '최근 진단 히스토리',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B5E20)),
-                  ),
-                  const SizedBox(height: 10),
-                  if (history.isEmpty)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Center(
-                          child: Text(
-                            '아직 진단 기록이 없습니다.\n[해충 카메라] 탭에서 사진을 찍거나 샘플을 선택해 보세요!',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    ...history.take(5).map(
-                      (item) => Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          leading: const CircleAvatar(
-                            backgroundColor: Color(0xFFE8F5E9),
-                            child: Icon(Icons.bug_report_rounded, color: Color(0xFF1B5E20)),
-                          ),
-                          title: Text(
-                            '${item.finalPestName} (${item.growthStage})',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                          ),
-                          subtitle: Text(
-                            'YOLO 1차: ${item.yoloPredName} (${(item.yoloConfidence * 100).toStringAsFixed(1)}%)',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          trailing: item.isSelfCorrected
-                              ? Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange.shade100,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    'VLM 교정',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.orange.shade900,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(Icons.check_circle_rounded, color: Colors.green),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPipelineStepChip({
-    required IconData icon,
-    required String step,
-    required String title,
-    required String desc,
-  }) {
-    return Expanded(
-      child: Card(
+    final gutter = MediaQuery.sizeOf(context).width >= 600 ? 32.0 : 16.0;
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1200),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          child: Column(
-            children: [
-              Icon(icon, color: const Color(0xFF2E7D32), size: 24),
-              const SizedBox(height: 4),
-              Text(
-                step,
-                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey),
-              ),
-              Text(
-                title,
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1B5E20)),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                desc,
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade700, height: 1.25),
-              ),
-            ],
-          ),
+          padding: EdgeInsets.symmetric(horizontal: gutter),
+          child: SizedBox(width: double.infinity, child: child),
         ),
       ),
     );
   }
 }
 
-// ============================================================================
-// [탭 2] 해충 카메라 & YOLO -> LoRA VLM 통합 판별 화면 (PestCameraScreen)
-// ============================================================================
-class PestCameraScreen extends StatefulWidget {
-  final PipelineApiService apiService;
-  final SamplePestPreset? initialPreset;
-  final VoidCallback onPresetConsumed;
-  final void Function(PestDiagnosisResult result) onDiagnosisCompleted;
+class _PhotoActions extends StatelessWidget {
+  const _PhotoActions({required this.onPick, this.onDark = false});
 
+  final ValueChanged<ImageSource>? onPick;
+  final bool onDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final pick = onPick;
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      children: [
+        FilledButton.icon(
+          onPressed: pick == null ? null : () => pick(ImageSource.camera),
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 48),
+            backgroundColor: onDark ? const Color(0xFFE2F3D1) : _green,
+            foregroundColor: onDark ? _green : Colors.white,
+          ),
+          icon: const Icon(Icons.camera_alt_outlined),
+          label: const Text('사진 촬영'),
+        ),
+        OutlinedButton.icon(
+          onPressed: pick == null ? null : () => pick(ImageSource.gallery),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 48),
+            foregroundColor: onDark ? Colors.white : _green,
+            side: const BorderSide(color: Color(0xFF8EA79A)),
+          ),
+          icon: const Icon(Icons.upload_file_outlined),
+          label: const Text('이미지 업로드'),
+        ),
+      ],
+    );
+  }
+}
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({
+    super.key,
+    required this.history,
+    required this.onPick,
+    required this.onSelectPreset,
+  });
+
+  final List<PestDiagnosisResult> history;
+  final ValueChanged<ImageSource> onPick;
+  final ValueChanged<SamplePestPreset> onSelectPreset;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      key: const PageStorageKey('home'),
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: _Content(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF133D2D), Color(0xFF24634A)],
+                ),
+              ),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '연구용 프로토타입',
+                    style: TextStyle(
+                      color: Color(0xFFCEF0BB),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '사진으로 노지 해충을 확인하세요',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize:
+                          MediaQuery.sizeOf(context).width >= 600 ? 34 : 25,
+                      height: 1.2,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '해충 후보와 판별 근거, 방제 참고 정보를 살펴보세요.',
+                    style: TextStyle(color: Color(0xFFE3EFE6), height: 1.45),
+                  ),
+                  const SizedBox(height: 16),
+                  _PhotoActions(onPick: onPick, onDark: true),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            const _SectionHeading('AI 진단 과정'),
+            const SizedBox(height: 10),
+            const _ResponsiveCards(
+              minWidth: 250,
+              maxColumns: 3,
+              children: [
+                _PipelineStep(
+                  Icons.center_focus_strong,
+                  '1. 해충 탐지',
+                  'YOLOv8-Large v5가 해충 위치를 찾습니다.',
+                ),
+                _PipelineStep(
+                  Icons.visibility_outlined,
+                  '2. 형태 검증',
+                  'Qwen2-VL LoRA가 형태와 유사종을 비교합니다.',
+                ),
+                _PipelineStep(
+                  Icons.eco_outlined,
+                  '3. 방제 정보',
+                  '예상 피해와 PLS 방제 참고 정보를 정리합니다.',
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            const _SectionHeading('샘플 사진으로 체험'),
+            const SizedBox(height: 4),
+            const Text(
+              '사진을 선택하면 내장 시연 결과를 볼 수 있습니다.',
+              style: TextStyle(color: _muted),
+            ),
+            const SizedBox(height: 12),
+            _ResponsiveCards(
+              minWidth: 148,
+              maxColumns: 3,
+              children: [
+                for (final sample in PipelineApiService.samplePresets)
+                  _SampleCard(
+                    sample: sample,
+                    onTap: () => onSelectPreset(sample),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            const _SectionHeading('최근 진단'),
+            const SizedBox(height: 10),
+            if (history.isEmpty)
+              const Card(
+                child: ListTile(
+                  leading: Icon(Icons.history, color: _green),
+                  title: Text('아직 진단 기록이 없습니다.'),
+                ),
+              )
+            else
+              for (final item in history.take(5))
+                Card(
+                  child: ListTile(
+                    leading: const Icon(
+                      Icons.bug_report_outlined,
+                      color: _green,
+                    ),
+                    title: Text(item.finalPestName),
+                    subtitle: Text(
+                      '${item.growthStage} · YOLO 후보 ${item.yoloPredName}',
+                    ),
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading(this.title);
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    title,
+    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+      color: _green,
+      fontWeight: FontWeight.w800,
+    ),
+  );
+}
+
+class _ResponsiveCards extends StatelessWidget {
+  const _ResponsiveCards({
+    required this.children,
+    required this.minWidth,
+    required this.maxColumns,
+  });
+  final List<Widget> children;
+  final double minWidth;
+  final int maxColumns;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 12.0;
+        final columns = ((constraints.maxWidth + gap) / (minWidth + gap))
+            .floor()
+            .clamp(1, maxColumns);
+        final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final child in children) SizedBox(width: width, child: child),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PipelineStep extends StatelessWidget {
+  const _PipelineStep(this.icon, this.title, this.description);
+  final IconData icon;
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          Icon(icon, color: _green),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: _green,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  description,
+                  style: const TextStyle(color: _muted, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SampleCard extends StatelessWidget {
+  const _SampleCard({required this.sample, required this.onTap});
+  final SamplePestPreset sample;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(
+              aspectRatio: 1.65,
+              child: Ink.image(
+                image: AssetImage(sample.sampleImagePath),
+                fit: BoxFit.cover,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          sample.presetResult.finalPestName,
+                          style: const TextStyle(
+                            color: _green,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          sample.cropName,
+                          style: const TextStyle(color: _muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.play_circle_outline,
+                    size: 21,
+                    color: _green,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PestCameraScreen extends StatefulWidget {
   const PestCameraScreen({
     super.key,
     required this.apiService,
-    required this.initialPreset,
-    required this.onPresetConsumed,
     required this.onDiagnosisCompleted,
   });
+
+  final PipelineApiService apiService;
+  final ValueChanged<PestDiagnosisResult> onDiagnosisCompleted;
 
   @override
   State<PestCameraScreen> createState() => _PestCameraScreenState();
@@ -448,368 +516,315 @@ class PestCameraScreen extends StatefulWidget {
 class _PestCameraScreenState extends State<PestCameraScreen> {
   final ImagePicker _picker = ImagePicker();
   String? _selectedImagePath;
-  bool _isAssetImage = true;
-  bool _isRunningPipeline = false;
-  String _pipelineStatusMessage = '';
-  bool _showVisualBBox = true;
+  Uint8List? _imageBytes;
+  bool _picking = false;
+  bool _running = false;
+  bool _showBoxes = true;
+  bool _fromServer = false;
+  String _status = '';
   PestDiagnosisResult? _result;
 
-  @override
-  void initState() {
-    super.initState();
-    // 초기 기본 샘플 로드
-    final defaultPreset = widget.initialPreset ?? PipelineApiService.samplePresets.first;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _runWithPreset(defaultPreset);
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant PestCameraScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialPreset != null && widget.initialPreset != oldWidget.initialPreset) {
-      final preset = widget.initialPreset!;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.onPresetConsumed();
-        _runWithPreset(preset);
-      });
-    }
-  }
+  bool get _busy => _picking || _running;
 
   Future<void> _runWithPreset(SamplePestPreset preset) async {
-    setState(() {
-      _selectedImagePath = preset.sampleImagePath;
-      _isAssetImage = true;
-      _isRunningPipeline = true;
-      _result = null;
-    });
-
-    final res = await widget.apiService.runFullPipeline(
-      imagePath: preset.sampleImagePath,
-      isAsset: true,
-      matchedPreset: preset,
-      onProgress: (msg) {
-        if (mounted) {
-          setState(() {
-            _pipelineStatusMessage = msg;
-          });
-        }
-      },
-    );
-
-    if (mounted) {
-      setState(() {
-        _isRunningPipeline = false;
-        _result = res;
-      });
-      widget.onDiagnosisCompleted(res);
-    }
+    if (_busy) return;
+    await _run(imagePath: preset.sampleImagePath, preset: preset);
   }
 
   Future<void> _pickImage(ImageSource source) async {
+    if (_busy) return;
+    setState(() => _picking = true);
     try {
-      final XFile? picked = await _picker.pickImage(source: source, imageQuality: 92);
-      if (picked == null) return;
-
-      setState(() {
-        _selectedImagePath = picked.path;
-        _isAssetImage = false;
-        _isRunningPipeline = true;
-        _result = null;
-      });
-
-      final res = await widget.apiService.runFullPipeline(
-        imagePath: picked.path,
-        isAsset: false,
-        onProgress: (msg) {
-          if (mounted) {
-            setState(() {
-              _pipelineStatusMessage = msg;
-            });
-          }
-        },
-      );
-
+      final picked = await _picker.pickImage(source: source, imageQuality: 92);
+      if (picked == null || !mounted) return;
+      final bytes = await picked.readAsBytes();
+      if (!mounted) return;
+      await _run(imagePath: picked.path, fileName: picked.name, bytes: bytes);
+    } catch (_) {
       if (mounted) {
-        setState(() {
-          _isRunningPipeline = false;
-          _result = res;
-        });
-        widget.onDiagnosisCompleted(res);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('카메라/갤러리 호출 안내: 데스크톱 환경에서는 갤러리 파일 선택 또는 하단 샘플 칩을 이용해 주세요. ($e)')),
+        _showMessage(
+          source == ImageSource.camera
+              ? '카메라를 열 수 없습니다. 권한을 확인하거나 이미지를 업로드해 주세요.'
+              : '이미지를 열 수 없습니다. 다른 사진을 선택해 주세요.',
         );
       }
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _run({
+    required String imagePath,
+    String? fileName,
+    Uint8List? bytes,
+    SamplePestPreset? preset,
+  }) async {
+    setState(() {
+      _selectedImagePath = imagePath;
+      _imageBytes = bytes;
+      _running = true;
+      _status = '진단을 준비하는 중';
+      _result = null;
+    });
+
+    var fromServer = false;
+    try {
+      final result = await widget.apiService.runFullPipeline(
+        imagePath: imagePath,
+        isAsset: preset != null,
+        matchedPreset: preset,
+        uploadBytes: kIsWeb ? bytes : null,
+        uploadFileName: fileName,
+        onServerResult: () => fromServer = true,
+        onProgress: (message) {
+          if (mounted) setState(() => _status = message);
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _result = result;
+        _fromServer = fromServer;
+      });
+      widget.onDiagnosisCompleted(result);
+    } catch (_) {
+      if (mounted) _showMessage('진단을 완료하지 못했습니다. 다시 시도해 주세요.');
+    } finally {
+      if (mounted) setState(() => _running = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF1B5E20),
-          foregroundColor: Colors.white,
-          title: const Text(
-            '해충 카메라 & AI 방제 처방',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
-          actions: [
-            if (_result != null)
-              Row(
-                children: [
-                  const Text('시각 BBox', style: TextStyle(fontSize: 12)),
-                  Switch(
-                    value: _showVisualBBox,
-                    activeThumbColor: const Color(0xFFA5D6A7),
-                    onChanged: (val) => setState(() => _showVisualBBox = val),
+    final result = _running ? null : _result;
+    return SingleChildScrollView(
+      key: const PageStorageKey('diagnosis'),
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: _Content(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _SectionHeading('해충 사진 진단'),
+            const SizedBox(height: 10),
+            _PhotoActions(onPick: _busy ? null : _pickImage),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                for (final preset in PipelineApiService.samplePresets)
+                  ChoiceChip(
+                    label: Text(preset.presetResult.finalPestName),
+                    selected: _selectedImagePath == preset.sampleImagePath,
+                    onSelected: _busy ? null : (_) => _runWithPreset(preset),
                   ),
-                ],
-              ),
-          ],
-        ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 1. 촬영 및 사진 선택 버튼 바
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _isRunningPipeline ? null : () => _pickImage(ImageSource.camera),
-                      icon: const Icon(Icons.camera_alt_rounded),
-                      label: const Text('해충 직접 촬영'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1B5E20),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _isRunningPipeline ? null : () => _pickImage(ImageSource.gallery),
-                      icon: const Icon(Icons.photo_library_rounded),
-                      label: const Text('앨범에서 선택'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1B5E20),
-                        side: const BorderSide(color: Color(0xFF1B5E20), width: 1.5),
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // 시연용 빠른 샘플 테스트 칩
-              SizedBox(
-                height: 38,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: PipelineApiService.samplePresets.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, idx) {
-                    final preset = PipelineApiService.samplePresets[idx];
-                    final isSelected = _selectedImagePath == preset.sampleImagePath;
-                    return ActionChip(
-                      avatar: Icon(
-                        Icons.bug_report_rounded,
-                        size: 16,
-                        color: isSelected ? Colors.white : const Color(0xFF1B5E20),
-                      ),
-                      label: Text(
-                        preset.presetResult.finalPestName,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: isSelected ? Colors.white : const Color(0xFF1B5E20),
-                        ),
-                      ),
-                      backgroundColor: isSelected ? const Color(0xFF2E7D32) : const Color(0xFFE8F5E9),
-                      onPressed: _isRunningPipeline ? null : () => _runWithPreset(preset),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // 2. 이미지 + 시각적 바운딩 박스(Visual Prompting) 뷰어
-              Container(
-                width: double.infinity,
-                height: 270,
-                decoration: BoxDecoration(
-                  color: Colors.black87,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.green.shade200, width: 2),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: _selectedImagePath == null
-                    ? const Center(
-                        child: Text(
-                          '해충 사진을 촬영하거나 선택해 주세요',
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                      )
-                    : Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          _isAssetImage
-                              ? Image.asset(_selectedImagePath!, fit: BoxFit.contain)
-                              : Image.file(File(_selectedImagePath!), fit: BoxFit.contain),
-                          if (_showVisualBBox && _result != null && !_isRunningPipeline)
-                            CustomPaint(
-                              painter: VisualBBoxPainter(boxes: _result!.boxes),
-                            ),
-                          if (_isRunningPipeline)
-                            Container(
-                              color: Colors.black54,
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const CircularProgressIndicator(color: Color(0xFFA5D6A7)),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    _pipelineStatusMessage,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-              ),
-              const SizedBox(height: 16),
-
-              // 3. 파이프라인 추론 결과 표시 영역
-              if (_result != null && !_isRunningPipeline) ...[
-                // Stage 1: YOLOv8-Large v5 탐지 메타데이터 배지 카드
-                Card(
-                  color: const Color(0xFFE8F5E9),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1B5E20),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Text(
-                                '1단계 YOLOv8-Large v5',
-                                style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '탐지 개체: ${_result!.detectedCount}개 • 추론 ${_result!.yoloLatencyMs.toStringAsFixed(1)}ms',
-                              style: TextStyle(fontSize: 12, color: Colors.green.shade900, fontWeight: FontWeight.w600),
-                            ),
-                            const Spacer(),
-                            if (_result!.isSelfCorrected)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.deepOrange,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  '2단계 VLM 유사종 교정 발동',
-                                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '1차 YOLO 예측: ${_result!.yoloPredName} (${(_result!.yoloConfidence * 100).toStringAsFixed(1)}%)',
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            const Icon(Icons.arrow_forward_rounded, size: 16, color: Color(0xFF1B5E20)),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                '최종 확정: ${_result!.finalPestName}',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF1B5E20),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Stage 2: Qwen2-VL-2B LoRA Rank 16 3단계 진단 및 방제 처방 카드
-                _buildSectionCard(
-                  badge: '2단계 Qwen2-VL-2B LoRA (Rank 16)',
-                  icon: Icons.verified_rounded,
-                  iconColor: const Color(0xFF1B5E20),
-                  title: '1. 진단 결과 및 시각적 형태 근거 (${_result!.growthStage})',
-                  content: _result!.diagnosisSection,
-                ),
-                const SizedBox(height: 10),
-                _buildSectionCard(
-                  badge: '작물 병해충 피해 분석',
-                  icon: Icons.warning_amber_rounded,
-                  iconColor: Colors.orange.shade800,
-                  title: '2. 예상 작물 피해 증상',
-                  content: _result!.symptomSection,
-                ),
-                const SizedBox(height: 10),
-                _buildSectionCard(
-                  badge: '농촌진흥청 PLS 안전사용기준 준수',
-                  icon: Icons.health_and_safety_rounded,
-                  iconColor: Colors.teal.shade700,
-                  title: '3. 맞춤형 권장 방제법 및 약제 처방',
-                  content: _result!.controlSection,
-                  highlight: true,
-                ),
               ],
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final photo = _buildPhoto(
+                  result,
+                  height: constraints.maxWidth >= 780 ? 360 : 260,
+                );
+                if (result == null) return photo;
+                final details = _buildResult(result);
+                if (constraints.maxWidth < 780) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [photo, const SizedBox(height: 14), details],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 5, child: photo),
+                    const SizedBox(width: 16),
+                    Expanded(flex: 7, child: details),
+                  ],
+                );
+              },
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildSectionCard({
-    required String badge,
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String content,
-    bool highlight = false,
-  }) {
+  Widget _buildPhoto(PestDiagnosisResult? result, {required double height}) {
+    final path = _selectedImagePath;
+    final bytes = _imageBytes;
+    final Widget? image =
+        bytes != null
+            ? Image.memory(
+              bytes,
+              semanticLabel: '선택한 해충 사진',
+              errorBuilder:
+                  (_, _, _) => const Text(
+                    '사진 미리보기를 표시할 수 없습니다.',
+                    style: TextStyle(color: Colors.white),
+                  ),
+            )
+            : path == null
+            ? null
+            : Image.asset(path, semanticLabel: '샘플 해충 사진');
+    final showToggle = result != null && result.boxes.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          width: double.infinity,
+          height: height,
+          decoration: BoxDecoration(
+            color: const Color(0xFF17271F),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (image == null)
+                const Center(
+                  child: Text(
+                    '사진을 촬영하거나 이미지를 선택해 주세요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white),
+                  ),
+                )
+              else
+                FittedBox(
+                  fit: BoxFit.contain,
+                  child: Stack(
+                    children: [
+                      image,
+                      if (showToggle && _showBoxes)
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: VisualBBoxPainter(boxes: result.boxes),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (_running)
+                ColoredBox(
+                  color: Colors.black54,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(
+                            color: Color(0xFFCEF0BB),
+                          ),
+                          const SizedBox(height: 12),
+                          Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              _status,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (showToggle)
+          SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            title: Text(_fromServer ? '탐지 영역 표시' : '시연 탐지 영역 표시'),
+            value: _showBoxes,
+            onChanged: (value) => setState(() => _showBoxes = value),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildResult(PestDiagnosisResult result) {
+    final confidence = (result.yoloConfidence * 100).toStringAsFixed(1);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          margin: EdgeInsets.zero,
+          color: const Color(0xFFE6F0E5),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _fromServer ? '서버 분석 · 연구용' : '내장 시연 결과',
+                  style: const TextStyle(
+                    color: _muted,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                _SectionHeading(result.finalPestName),
+                const SizedBox(height: 4),
+                Text(result.growthStage),
+                if (!_fromServer) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    '시연 데이터입니다. 현장 진단이나 방제 결정에 사용하지 마세요.',
+                    style: TextStyle(color: _muted, height: 1.45),
+                  ),
+                ],
+                const Divider(height: 24),
+                Text('YOLO 후보  ${result.yoloPredName} · 탐지 신뢰도 $confidence%'),
+                const SizedBox(height: 4),
+                Text(
+                  '탐지 개체 ${result.detectedCount}개 · YOLO ${result.yoloLatencyMs.toStringAsFixed(1)} ms',
+                ),
+                if (result.isSelfCorrected) ...[
+                  const SizedBox(height: 4),
+                  const Text(
+                    'VLM이 유사종 후보를 교정했습니다.',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _buildSectionCard(
+          Icons.visibility_outlined,
+          '형태 판별 근거',
+          result.diagnosisSection,
+        ),
+        _buildSectionCard(
+          Icons.warning_amber_rounded,
+          '예상 작물 피해',
+          result.symptomSection,
+        ),
+        _buildSectionCard(
+          Icons.eco_outlined,
+          '방제 참고 정보',
+          result.controlSection,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionCard(IconData icon, String title, String content) {
     return Card(
-      color: highlight ? const Color(0xFFF1F8E9) : Colors.white,
+      margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -817,23 +832,24 @@ class _PestCameraScreenState extends State<PestCameraScreen> {
           children: [
             Row(
               children: [
-                Icon(icon, color: iconColor, size: 20),
-                const SizedBox(width: 6),
-                Text(
-                  badge,
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: iconColor),
+                Icon(icon, color: _green, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: _green,
+                    ),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
-            ),
-            const Divider(height: 18),
-            Text(
+            const SizedBox(height: 10),
+            SelectableText(
               content,
-              style: const TextStyle(fontSize: 13.5, height: 1.55, color: Colors.black87),
+              style: const TextStyle(fontSize: 15, height: 1.55),
             ),
           ],
         ),
@@ -850,14 +866,16 @@ class VisualBBoxPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final boxPaint = Paint()
-      ..color = const Color(0xFFFF1E1E)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0;
+    final boxPaint =
+        Paint()
+          ..color = const Color(0xFFFF1E1E)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3.0;
 
-    final fillPaint = Paint()
-      ..color = const Color(0x22FF1E1E)
-      ..style = PaintingStyle.fill;
+    final fillPaint =
+        Paint()
+          ..color = const Color(0x22FF1E1E)
+          ..style = PaintingStyle.fill;
 
     for (final b in boxes) {
       final left = (b.xc - b.w / 2.0).clamp(0.0, 1.0) * size.width;
@@ -869,7 +887,8 @@ class VisualBBoxPainter extends CustomPainter {
       canvas.drawRect(rect, fillPaint);
       canvas.drawRect(rect, boxPaint);
 
-      final labelText = '${b.label} ${(b.confidence * 100).toStringAsFixed(1)}%';
+      final labelText =
+          '${b.label} ${(b.confidence * 100).toStringAsFixed(1)}%';
       final tp = TextPainter(
         text: TextSpan(
           text: labelText,
@@ -893,7 +912,8 @@ class VisualBBoxPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant VisualBBoxPainter oldDelegate) => oldDelegate.boxes != boxes;
+  bool shouldRepaint(covariant VisualBBoxPainter oldDelegate) =>
+      oldDelegate.boxes != boxes;
 }
 
 // ============================================================================
@@ -930,19 +950,15 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF1B5E20),
-          foregroundColor: Colors.white,
-          title: const Text(
-            '마이페이지 & 파이프라인 설정',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
+    return SingleChildScrollView(
+      key: const PageStorageKey('settings'),
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: _Content(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const _SectionHeading('마이페이지 및 설정'),
+            const SizedBox(height: 12),
             // 농가 및 프로젝트 프로필 카드
             Card(
               child: Padding(
@@ -952,7 +968,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
                     const CircleAvatar(
                       radius: 28,
                       backgroundColor: Color(0xFF1B5E20),
-                      child: Icon(Icons.agriculture_rounded, color: Colors.white, size: 30),
+                      child: Icon(
+                        Icons.agriculture_rounded,
+                        color: Colors.white,
+                        size: 30,
+                      ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -961,12 +981,19 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         children: [
                           const Text(
                             'MYSTIC 스마트 영농 연구팀',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             '참여기업: (주)스톰힐 이노베이션\n지도교수: 최희열 교수님 | 누적 진단: ${widget.historyCount}건',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.4),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                              height: 1.4,
+                            ),
                           ),
                         ],
                       ),
@@ -980,22 +1007,48 @@ class _MyPageScreenState extends State<MyPageScreen> {
             // 탑재된 2-Stage AI 파이프라인 스펙
             const Text(
               '탑재된 AI 파이프라인 모델 정보',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B5E20)),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1B5E20),
+              ),
             ),
             const SizedBox(height: 8),
             const Card(
               child: Column(
                 children: [
                   ListTile(
-                    leading: Icon(Icons.radar_rounded, color: Color(0xFF1B5E20)),
-                    title: Text('1단계 객체 탐지: YOLOv8-Large v5', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: Text('800×800 Letterbox • 유사종 2.0x 오버샘플링 • 야생 탐지율 96.0% (251 EP Peak)'),
+                    leading: Icon(
+                      Icons.radar_rounded,
+                      color: Color(0xFF1B5E20),
+                    ),
+                    title: Text(
+                      '1단계 객체 탐지: YOLOv8-Large v5',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '800×800 Letterbox • 유사종 2.0x 오버샘플링 • 현장 데이터 추가 검증 중',
+                    ),
                   ),
                   Divider(height: 1),
                   ListTile(
-                    leading: Icon(Icons.auto_awesome_rounded, color: Color(0xFF1B5E20)),
-                    title: Text('2단계 정밀 진단: Qwen2-VL-2B LoRA (Rank 16)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: Text('800장 확장 데이터셋 파인튜닝 • 시각적 BBox 가이딩 • Test 100장 정확도 100.0%'),
+                    leading: Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Color(0xFF1B5E20),
+                    ),
+                    title: Text(
+                      '2단계 정밀 진단: Qwen2-VL-2B LoRA (Rank 16)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '800장 확장 데이터셋 파인튜닝 • 시각적 BBox 가이딩 • 연구용 프로토타입',
+                    ),
                   ),
                 ],
               ),
@@ -1005,7 +1058,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
             // FastAPI 백엔드 서버 연동 설정
             const Text(
               '추론 백엔드 서버(FastAPI) 연동 설정',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B5E20)),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1B5E20),
+              ),
             ),
             const SizedBox(height: 8),
             Card(
@@ -1018,10 +1075,13 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       contentPadding: EdgeInsets.zero,
                       title: const Text(
                         '실시간 FastAPI GPU 서버 연동 모드',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                       subtitle: const Text(
-                        'OFF 시 앱 내장 파이프라인 시연 엔진으로 즉시 동작하며, ON 시 아래 FastAPI 서버로 사진을 전송합니다.',
+                        '켜면 촬영·업로드 사진을 아래 서버로 전송합니다. 서버 분석이 실패하면 내장 시연 결과를 표시합니다.',
                         style: TextStyle(fontSize: 12),
                       ),
                       value: widget.apiService.useLiveServer,
@@ -1036,8 +1096,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
                     TextField(
                       controller: _urlController,
                       decoration: InputDecoration(
-                        labelText: 'FastAPI 서버 주소 (예: http://127.0.0.1:8000)',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        labelText: 'FastAPI 서버 주소',
+                        hintText: 'http://127.0.0.1:8000',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         isDense: true,
                       ),
                       onChanged: (val) {
